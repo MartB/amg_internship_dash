@@ -1,0 +1,35 @@
+name: AMG Dashboard Build & Test
+
+on:
+  push:
+    branches:
+      - $default-branch
+      - dev
+  pull_request:
+    branches:
+      - $default-branch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_SEMVER: 3.11
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: "Setting up python${{ env.PYTHON_SEMVER }}"
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_SEMVER }}
+        cache: 'pip'
+
+    - name: Build application
+      run: pip install -r requirements.txt
+
+    - name: Download stock sample data
+      run: |
+        mkdir -p data 
+        wget https://raw.githubusercontent.com/plotly/datasets/master/stockdata2.csv -P data
+
+    - name: Test with pytest
+      run: python -m pytest tests/test.py

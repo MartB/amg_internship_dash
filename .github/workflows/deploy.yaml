@@ -1,0 +1,59 @@
+name: AMG Dashboard Deploy
+concurrency: production
+
+on:
+  push:
+    branches:
+      - $default-branch
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    permissions:
+     contents: 'read'
+     id-token: 'write'
+    name: Deploy AMG Dash on google cloud
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.GCP_APP_NAME }}:${{ github.sha }}
+    steps:
+        - name: Checkout repository
+          uses: actions/checkout@v3
+
+        - id: 'auth'
+          name: 'Authenticate to Google Cloud'
+          uses: 'google-github-actions/auth@v1'
+          with:
+            token_format: 'access_token'
+            workload_identity_provider: '${{ secrets.GCP_WIP }}'
+            service_account: '${{ secrets.GCP_EMAIL }}'
+
+        - uses: 'docker/login-action@v1'
+          with:
+            registry: 'gcr.io'
+            username: 'oauth2accesstoken'
+            password: '${{ steps.auth.outputs.access_token }}'
+  
+        - name: Download stock sample data
+          run: |
+            mkdir -p data 
+            wget https://raw.githubusercontent.com/plotly/datasets/master/stockdata2.csv -P data
+
+        - name: Build Docker image
+          run: docker build . -t $IMAGE_NAME
+
+        - name: Push Docker image
+          run: docker push $IMAGE_NAME
+
+        - id: deploy
+          name: Deploy AMG dash
+          uses: "google-github-actions/deploy-cloudrun@v1"
+          with:
+            image: ${{ env.IMAGE_NAME }}
+            region: europe-west3
+            service: ${{ secrets.GCP_APP_NAME }}
+            # Custom port flag as this is not supported by the ghub action, allow access to everyone
+            flags: --port 5050 --allow-unauthenticated
+
+        - name: Check service state
+          run: curl "${{ steps.deploy.outputs.url }}"
