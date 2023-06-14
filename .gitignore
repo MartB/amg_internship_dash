@@ -130,3 +130,6 @@ dmypy.json
 
 # Application data folder
 /data
+
+# Test results
+test-results.xml

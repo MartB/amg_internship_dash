@@ -1,0 +1,85 @@
+name: AMG Dash Deploy
+concurrency: production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    permissions:
+      contents: "read"
+      id-token: "write"
+    name: Deploy AMG Dash on google cloud
+    runs-on: ubuntu-latest
+    env:
+      CONTAINER_NAME: ${{ secrets.GCP_APP_NAME }}
+      IMAGE_NAME: gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.GCP_APP_NAME }}:${{ github.sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Download stock sample data
+        run: |
+          mkdir -p data 
+          wget https://raw.githubusercontent.com/plotly/datasets/master/stockdata2.csv -P data
+
+      - name: Build Docker image
+        run: |
+          docker build . -t ${{ env.IMAGE_NAME }}
+
+      # Uses a volume mount to temporarily get the tests inside the container
+      # Extracts the resulting test results file from the volume
+      # todo: should the tests always be part of the container?
+      - name: Execute tests within Docker container
+        run: |
+          docker run --name ${{ env.CONTAINER_NAME }} -v "${GITHUB_WORKSPACE}"/tests:/tests:Z ${{ env.IMAGE_NAME }} python -m pytest /tests/test.py --junit-xml=/tests/results.xml
+          docker cp ${{ env.CONTAINER_NAME }}:/tests/results.xml test-results.xml
+
+      - name: Check for failed tests
+        if: always()
+        uses: pmeier/pytest-results-action@main
+        with:
+          path: test-results.xml
+
+      - id: "auth"
+        uses: "google-github-actions/auth@v1"
+        name: Authenticate with Google Cloud
+        with:
+          token_format: "access_token"
+          workload_identity_provider: "${{ secrets.GCP_WIP }}"
+          service_account: "${{ secrets.GCP_EMAIL }}"
+
+      - uses: "docker/login-action@v1"
+        name: Login to the Google Cloud Registry
+        with:
+          registry: "gcr.io"
+          username: "oauth2accesstoken"
+          password: "${{ steps.auth.outputs.access_token }}"
+
+      - name: Push docker image to GCR
+        run: docker push ${{ env.IMAGE_NAME }}
+
+      - id: deploygcr
+        name: Deploy on cloudrun
+        uses: "google-github-actions/deploy-cloudrun@v1"
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          region: europe-west3
+          service: ${{ secrets.GCP_APP_NAME }}
+          # Custom port flag as this is not supported by the ghub action
+          # Allow unauthenticated users, this app is supposed to be public
+          flags: --port 5050 --allow-unauthenticated
+
+      - name: Check if app is reachable
+        run: |
+          STATUS_CODE=$(curl --write-out %{http_code} --silent --output /dev/null ${{ steps.deploygcr.outputs.url }})
+          if [[ "$STATUS_CODE" > "401" ]]; then
+            echo "# App not reachable! :warning:" >> $GITHUB_STEP_SUMMARY
+            echo "The returned status code ($STATUS_CODE) indicates a deployment error." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "# App is healthy! :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "The status code looked fine!" >> $GITHUB_STEP_SUMMARY

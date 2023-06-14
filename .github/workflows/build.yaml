@@ -1,0 +1,43 @@
+name: AMG Dash Check PR
+
+# Only run the quick build & test on pull requests.
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_SEMVER: 3.11
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: "Setting up python${{ env.PYTHON_SEMVER }}"
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_SEMVER }}
+          cache: "pipenv"
+      - name: Install pipenv
+        run: pip install pipenv
+
+      - name: Download stock sample data
+        run: |
+          mkdir -p data 
+          wget https://raw.githubusercontent.com/plotly/datasets/master/stockdata2.csv -P data
+
+      - name: Install dependencies
+        run: pipenv install --dev
+
+      - name: Run pytests
+        # Unable to use proper pytest invocation due to invalid test file names
+        # pytest only recognized test_*.py or *_test.py automatically
+        # run: pipenv run pytest --junit-xml=test-results.xml
+        run: pipenv run python -m pytest tests/test.py --junit-xml=test-results.xml
+
+      - name: Check for failed tests
+        if: always()
+        uses: pmeier/pytest-results-action@main
+        with:
+          path: test-results.xml
