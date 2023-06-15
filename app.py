@@ -21,7 +21,7 @@ Created on 13.07.2021
 import pandas as pd
 
 import dash
-# import dash_auth
+import dash_auth
 import dash_html_components as html
 from dash.dependencies import Input, Output
 import dash_core_components as dcc
@@ -30,7 +30,7 @@ import pathlib as pl
 import os
 import plotly.graph_objects as go
 
-# from _users import USERNAME_PASSWORD_PAIRS
+from _users import USERNAME_PASSWORD_PAIRS
 
 # Load data
 csv_file = pl.Path(os.getcwd()).resolve().joinpath('data/stockdata2.csv').resolve()
@@ -65,7 +65,7 @@ def amg_you_rock():
 
 # Initialise the app
 app = dash.Dash(__name__)
-# auth = dash_auth.BasicAuth(app, USERNAME_PASSWORD_PAIRS)
+auth = dash_auth.BasicAuth(app, USERNAME_PASSWORD_PAIRS)
 
 # Define the app
 app.layout = html.Div(children=[
